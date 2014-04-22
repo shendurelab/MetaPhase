@@ -1,0 +1,13 @@
+#species abbreviation, species full name (no spaces), species reference fasta relative to refs_dir
+PP, Pseudomonas_proteges, PP/PP.fasta
+PF, Pseudomonas_fluorescens, PF/PF.fasta
+HS, Herbaspirillum_seropedicae, HS/HS.fasta
+Sm, Sordaria_macrospora, Sm/Sm.fasta
+TM, Togninia_minimia, TM/TM.fasta
+PS, Pseudomonas_syringae, PS/PS.fasta
+poplar, Popula_trichocarpa, poplar/poplar.fasta
+CG, Collecotrichum_gloeosporioides, CG/CG.fasta
+Nc, Neuospora_crassa, NC/NC.fasta
+Cf, Colletotrichum_fioriniae, Cf/Cf.fasta
+SC, Saccharomyces_cerevisiae, SC-FY/SC-FY.fasta
+RG, Rhodotorula_graminis, RG/RG.fasta

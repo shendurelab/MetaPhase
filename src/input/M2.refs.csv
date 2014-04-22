@@ -1,0 +1,20 @@
+#species abbreviation, species full name (no spaces), species reference fasta relative to refs_dir
+SC-FY, S.cerevisiae_FY, SC-FY/SC-FY.fasta
+ZR, Zygosaccharomyces_rouxii, ZR/ZR.fasta
+LT, Lachancea_thermotolerans, LT/LT.fasta
+KA, Kluyveromyces_aestuarii, KA/KA.fasta
+HP, Hansenula_polymorpha, HP/HP.fasta
+KP, Pichia_pastoris, KP/KP.fasta
+zP, Schizosaccharomyces_pombe, zP/zP.fasta
+zJ, Schizosaccharomyces_japonicus, zJ/zJ.fasta
+RG, Rhodotorula_graminis, RG/RG.fasta
+MM, Methanococcus_maripaludis, MM/MM.fasta
+EC, E.coli, EC/EC.fasta
+VF, Vibrio_fischeri, VF/VF.fasta
+PF, Pseudomonas_fluorescens, PF/PF.fasta
+AB, Acinetobacter_baylyi_ADP1, AB/AB.fasta
+BT, Burkholderia_thailandensis, BT/BT.fasta
+AT, Agrobacterium_tumefaciens, AT/AT.fasta
+RP, Rhodopseudomonas_palustris, RP/RP.fasta
+FJ, Flavobacterium_johnsoniae, FJ/FJ.fasta
+BS, Bacillus_subtilis, BS/BS.fasta

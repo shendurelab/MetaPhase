@@ -1,0 +1,3 @@
+#library name, RE site sequence, SAM/BAM filename (relative to HiC_dir) of library aligned to assembly
+Hind3, AAGCTT, Hind3.all_lens.REduced_500.bam
+#Nco1,  CCATGG,  Nco1.all_lens.REduced_500.bam

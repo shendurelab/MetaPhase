@@ -1,0 +1,3 @@
+#library name, RE site sequence, SAM/BAM filename (relative to HiC_dir) of library aligned to assembly
+#H3, AAGCTT, H3.bam
+H3, CCATGG, poplar.N1.all_lens.bam
