@@ -341,7 +341,7 @@ ClusteringResult::Print( const TrueMapping & truth, ostream & out ) const
 // If require_unique_alignment = true, only count contigs aligning uniquely to a reference (single-species contigs)
 // Only draw clusters with length (in bp) at least MIN_CLUSTER_LEN (default 0).
 void
-ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_unique_alignment, const bool plot, const int MIN_CLUSTER_LEN ) const
+ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_unique_alignment, const bool plot, const bool MY, const int MIN_CLUSTER_LEN ) const
 {
   cout << Time() << ": ClusteringReport::DrawChart" << endl;
   
@@ -349,9 +349,9 @@ ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_uniqu
   
   
   // Options
-  bool MERGE_SC = false; // skip SC-non-FY, condense the SC strains
-  bool HIDE_DEAD = false;
-  if ( MERGE_SC || HIDE_DEAD ) assert( truth.RefName(1) == "SC-CEN" ); // make sure this is the MetaYeast scenario!
+  bool MERGE_SC = MY; // skip SC-non-FY, condense the SC strains
+  bool HIDE_DEAD = MY;
+  if ( MERGE_SC || HIDE_DEAD ) assert( truth.NRefs() == 16 && truth.RefName(1) == "SC-CEN" ); // make sure this is the MetaYeast scenario!
   
   
   // For each cluster, and each reference genome, count the number of contigs and the amount of sequence in that cluster that derives from that genome (only).
@@ -406,7 +406,7 @@ ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_uniqu
   out_chart << "\t\t      LENGTH";
   for ( int j = 0; j < N_refs; j++ ) {
     if ( MERGE_SC )  if ( j == 1 || j == 2 || j == 3 ) continue;
-    if ( HIDE_DEAD ) if ( j == 6 || j == 15 ) continue;
+    if ( HIDE_DEAD ) if ( j == 15 ) continue;
     out_chart << '\t' << truth.RefName(j);
   }
   out_chart << endl;
@@ -451,11 +451,11 @@ ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_uniqu
 
 // DrawFigure2bc: Call DrawChart to create the chart and heatmap files, then call a script in ../figs to generate Figures 2b and 2c of the paper.
 void
-ClusteringResult::DrawFigure2bc( const TrueMapping & truth ) const
+ClusteringResult::DrawFigure2bc( const TrueMapping & truth, const bool MY ) const
 {
   // First call DrawChart to create the files heatmap.ClusteringResult.A.B.txt, where A = "u", "nu" (unique, nonunique) and B = NClusters().
-  DrawChart( truth, false, false, 500000 );
-  DrawChart( truth, true,  false, 500000 );
+  DrawChart( truth, false, false, MY, 500000 );
+  DrawChart( truth, true,  false, MY, 500000 );
   
   // Now call the script that makes the heatmaps.
   for ( int i = 0; i < 2; i++ ) {

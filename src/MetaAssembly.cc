@@ -335,13 +335,14 @@ MetaAssembly::FindMultiSpeciesContigs()
   int N_clusters = _clusters.NClusters();
   
   // Keep track of the number of true/false positives, which are determined by comparing the multi-species contig calls to true reference alignments.
-  vector< vector<int> > N_true_positives ( N_clusters, vector<int>( N_clusters, 0 ) );
-  vector< vector<int> > N_false_positives( N_clusters, vector<int>( N_clusters, 0 ) );
-  int N_true_positives_total = 0;
-  int N_false_positives_total = 0;
+  vector< vector<int> > N_TPs ( N_clusters, vector<int>( N_clusters, 0 ) );
+  vector< vector<int> > N_FPs( N_clusters, vector<int>( N_clusters, 0 ) );
+  int N_TPs_total = 0;
+  int N_FPs_total = 0;
   int N_error_fixes_total = 0;
-  int total_len = 0;
-  int true_len = 0;
+  int len_total = 0;
+  int len_TPs_total = 0;
+  int len_FPs_total = 0;
   
   
   // For the SC-SP case specifically (refs 0, 4) keep track of which contigs are called as multi-species.  This will let us find the false negative rate later.
@@ -447,7 +448,7 @@ MetaAssembly::FindMultiSpeciesContigs()
       bool aligns_to_ref0 =_truth->QOnRef( i, ref0 );
       bool aligns_to_ref1 =_truth->QOnRef( i, ref1 );
       
-      total_len += _contig_lengths[i];
+      len_total += _contig_lengths[i];
       
       // The above two Boolean flags imply the "truth" of the multi-species matter.  There are four possibilities:
       // CASE 1: ref0 = true , ref1 = true : True positive!  The contig truly belongs in both species, and thus in both clusters.
@@ -455,8 +456,8 @@ MetaAssembly::FindMultiSpeciesContigs()
       // CASE 3: ref0 = false, ref1 = true : Clustering error!  The contig shouldn't have been in that other cluster in the first place.  But here we're
       //                                     evaluating the multi-species contig placements, not the clustering, so count this as a true positive.
       // CASE 4: ref0 = false, ref1 = false: No information!  The contig doesn't align anywhere, so who the hell knows what cluster it belongs in.
-      if      ( aligns_to_ref1 ) { N_true_positives [cID][j]++; N_true_positives_total++; true_len += _contig_lengths[i]; }
-      else if ( aligns_to_ref0 ) { N_false_positives[cID][j]++; N_false_positives_total++; }
+      if      ( aligns_to_ref1 ) { N_TPs[cID][j]++; N_TPs_total++; len_TPs_total += _contig_lengths[i]; }
+      else if ( aligns_to_ref0 ) { N_FPs[cID][j]++; N_FPs_total++; len_FPs_total += _contig_lengths[i]; }
       if ( aligns_to_ref1 && !aligns_to_ref0 ) { N_error_fixes_total++; }
       
       
@@ -504,9 +505,11 @@ MetaAssembly::FindMultiSpeciesContigs()
   
   
   // Basic report.
-  double SENSITIVITY = true_len / double( len_calls_should );
-  double SPECIFICITY = N_true_positives_total / double ( N_true_positives_total + N_false_positives_total );
-  PRINT7( DENSITY_THRESHOLD, total_len, SENSITIVITY, SPECIFICITY, N_true_positives_total, N_false_positives_total, N_error_fixes_total );
+  double SENSITIVITY = len_TPs_total / double( len_calls_should );
+  double SPECIFICITY = N_TPs_total / double ( N_TPs_total + N_FPs_total );
+  PRINT3( DENSITY_THRESHOLD, SENSITIVITY, SPECIFICITY );
+  PRINT3( N_TPs_total, N_FPs_total, N_error_fixes_total );
+  PRINT3( len_total, len_TPs_total, len_FPs_total );
   
   
     
@@ -562,7 +565,8 @@ MetaAssembly::FindIntraClusterEnrichment( ostream & out ) const
       if ( C2 == -1 ) continue;
       
       int N_links = _link_matrix(i,j);
-      int len2 = ( _contig_RE_sites[i] - 1 ) * ( _contig_RE_sites[j] - 1 ); // here, remove the +1 that's normally added to contig_RE_sites
+      int len2 = _contig_RE_sites[i] * _contig_RE_sites[j];
+      //int len2 = ( _contig_RE_sites[i] - 1 ) * ( _contig_RE_sites[j] - 1 ); // here, remove the +1 that's normally added to contig_RE_sites
       
       ( C1 == C2 ? N_intra_cluster_links : N_inter_cluster_links ) += N_links;
       ( C1 == C2 ?   intra_cluster_len2  :   inter_cluster_len2  ) += len2;
@@ -719,7 +723,7 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
   const double edge_weight_scaling_factor = 0.5;
   //const int top_N_contigs_per_ref = 100; // a contig will be included in the chart if it's among the top 100 longest contigs that align to its reference...
   //const int top_N_contigs_per_ref_only = 100; // ...or if it's among the top 10 contigs that align only to its reference
-  const int top_N_contigs_per_cluster = 10; // TEMP: 200
+  const int top_N_contigs_per_cluster = 200;
   const int edge_weight_cutoff = 0; // throw out edges with fewer than this many links
   const double edge_density_cutoff = 0.01; // throw out edges with fewer than this many links per RE_site^2
   const double repulse_exp = 0.2; // 0 = perfect lattice spacing of vertices; 1 = extreme separation of vertices by cluster
@@ -801,7 +805,6 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
       const int c1 = it2.index1(); // contig IDs
       const int c2 = it2.index2();
       
-      // TEMP: I'm futzing with these; originally just the first line was decommented
       if ( !contigs_to_use[c1] || !contigs_to_use[c2] ) continue;
       //if ( _contig_lengths[c1] < len_cutoff || _contig_lengths[c2] < len_cutoff ) continue;
       
@@ -905,7 +908,7 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
   igraph_R <<
     "edge.weights <- sqrt( edge.chart$NLINKS * " << edge_weight_scaling_factor << " )\n\n"
     "# Load edges' cluster IDs and convert them to colors.  This requires a modified palette with an extra color for unclustered edges (-1).\n"
-    "palette2 <- c( 'gray20', palette )\n"
+    "palette2 <- c( 'gray50', palette )\n"
     "edge.colors <- palette2[ edge.chart$" << column_name << " + 2 ] # +1 for one-indexing, +1 for the '-1' entries\n"
     "\n\n\n\n";
   
@@ -1030,7 +1033,7 @@ MetaAssembly::WriteXGMML( const string & XGMML_file, const int MIN_LINK_WEIGHT )
 void
 MetaAssembly::WriteClusterFasta( const string & output_fasta, const int ID, const bool is_ref_ID ) const
 {
-  cout << Time() << ": WriteClusterFasta: " << ( is_ref_ID ? "cluster for ref #" : "cluster #" ) << ID << "\t->\t" << output_fasta << endl;
+  cout << Time() << ": WriteClusterFasta: " << ( is_ref_ID ? "cluster for ref. #" : "cluster #" ) << ID << "\t->\t" << output_fasta << endl;
   
   assert( !_clusters.empty() );
   assert( boost::filesystem::is_regular_file( _assembly_fasta ) ); // technically this isn't quite required by the constructor, so we're double-checking
@@ -1048,6 +1051,7 @@ MetaAssembly::WriteClusterFasta( const string & output_fasta, const int ID, cons
   }
   
   else {
+    assert( _truth != NULL );
     assert( ID >= 0 );
     assert( ID < _truth->NRefs() );
     

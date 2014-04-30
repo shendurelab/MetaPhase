@@ -78,10 +78,11 @@ class ClusteringResult
   void Print( const TrueMapping & truth, ostream & out = cout ) const;
   
   // Truth-based evaluation of the clusters in this ClusteringResult.  Produce the truth heatmap and chart files.  If plot = true, plot the heatmap image too.
-  void DrawChart( const TrueMapping & truth, const bool require_unique_alignment, const bool plot, const int MIN_CLUSTER_LEN = 0 ) const;
+  // If MY = true, assume this is a MetaYeast run, and hide SC-non-FY and KP.
+  void DrawChart( const TrueMapping & truth, const bool require_unique_alignment, const bool plot, const bool MY, const int MIN_CLUSTER_LEN = 0 ) const;
   
   // DrawFigure2bc: Call DrawChart to create the chart and heatmap files, then call a script in ../figs to generate Figures 2b and 2c of the paper.
-  void DrawFigure2bc( const TrueMapping & truth ) const;
+  void DrawFigure2bc( const TrueMapping & truth, const bool MY ) const;
   
   
  private:

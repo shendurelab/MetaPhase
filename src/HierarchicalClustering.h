@@ -32,7 +32,7 @@ using namespace std;
  *              triangular: that is matrix(i,j) = 0 for i >= j.  This matrix is used only for reporting intra-cluster enrichment.
  * matrix_in:   A normalized form of matrix_orig.  This is the version used for the actual algorithm.
  * norms:       A vector of length N, giving the lengths of the contigs, either in bp or in number of restriction sites.
- * N_clusters:  The number of clusters to create, i.e., the number of distinct species to call
+ * N_clusters:  The number of clusters to create, i.e., the number of distinct species to call. If equal to 1, will generate data for an E(N) plot (slow).
  * MIN_CLUSTER_NORM: clusters with a total norm smaller than this are not counted toward N_clusters and are discarded at the end
  *
  */

@@ -390,7 +390,8 @@ LinkMatrix<T>::IntraClusterEnrichment( const vector<int> & contig_clusterID, con
       if ( C2 == -1 ) continue;
       if ( cluster_norms[C2] < min_cluster_norm ) continue;
       
-      int len2 = ( contig_norms[i] - 1 ) * ( contig_norms[j] - 1 ); // here, remove the +1 that's normally added to contig RE sites
+      int len2 = contig_norms[i] * contig_norms[j];
+      //int len2 = ( contig_norms[i] - 1 ) * ( contig_norms[j] - 1 ); // here, remove the +1 that's normally added to contig RE sites
       
       ( C1 == C2 ? N_intra_cluster_links : N_inter_cluster_links ) += (*this)(i,j);
       ( C1 == C2 ?   intra_cluster_len2  :   inter_cluster_len2  ) += len2;

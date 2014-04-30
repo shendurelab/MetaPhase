@@ -108,9 +108,10 @@ AgglomerativeHierarchicalClustering( const LinkMatrixInt & matrix_orig, const Li
   // If two clusters both have this many contigs, keep a cache of their total linkages.
   // Lower numbers cause aggressive caching, which is faster - but only up to a point, and it's also more memory-intensive.
   static const int MIN_SIZE_FOR_CACHE = 20;
-  static const int MAX_N_FOR_ENRICHMENT = ceil( 1.2 * N_clusters ); // TODO: de-hardwire
+  static const bool DO_ENRICHMENT_CURVE = ( N_clusters == 1 );
+  bool down_enrichment_curve = false;
   
-  PRINT2( MIN_CLUSTER_NORM, MIN_SIZE_FOR_CACHE );
+  PRINT3( MIN_CLUSTER_NORM, MIN_SIZE_FOR_CACHE, DO_ENRICHMENT_CURVE );
   
   vector<bool> isolated_contigs = matrix_in._isolated_contigs;
   assert( N == isolated_contigs.size() );
@@ -242,9 +243,12 @@ AgglomerativeHierarchicalClustering( const LinkMatrixInt & matrix_orig, const Li
     //cout << "Merging clusters #" << best_i << " (" << cluster_norm[best_i] << "), #" << best_j << " (" << cluster_norm[best_j] << ") into #" << new_cluster_ID << endl;
     cout << Time() << ": After merge #" << N_merges << ": " << N_non_orig_clusters << " multi-node clusters, " << N_large_clusters << " large clusters, best linkage = " << best_linkage << endl;
     
-    // Toward the end, report on intra-cluster enrichment.  This is computationally expensive.
-    if ( past_start && N_large_clusters <= MAX_N_FOR_ENRICHMENT )
+    // If N_clusters is set to 1, then report on intra-cluster enrichment while clustering.  This is computationally expensive.
+    if ( DO_ENRICHMENT_CURVE ) {
+      if ( N_large_clusters >= 200 ) down_enrichment_curve = true;
+      if ( down_enrichment_curve && N_large_clusters <= 100 )
       cout << "\tN LARGE CLUSTERS = " << N_large_clusters << "\tE(N) = " << matrix_orig.IntraClusterEnrichment( contig_clusterID, norms, cluster_norm, MIN_CLUSTER_NORM ) << endl;
+    }
     
     N_merges++;
     N_merges_since_prune++;

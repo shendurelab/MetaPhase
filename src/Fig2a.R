@@ -37,7 +37,7 @@ V(graph)$color <- node.colors
 edge.weights <- sqrt( edge.chart$NLINKS * 0.5 )
 
 # Load edges' cluster IDs and convert them to colors.  This requires a modified palette with an extra color for unclustered edges (-1).
-palette2 <- c( 'gray20', palette )
+palette2 <- c( 'gray50', palette )
 edge.colors <- palette2[ edge.chart$TRUTH + 2 ] # +1 for one-indexing, +1 for the '-1' entries
 
 
@@ -49,7 +49,7 @@ lay <- layout.fruchterman.reingold( graph, niter=500, repulserad=N.nodes*N.nodes
 
 print( Sys.time() )
 
-png( file='~/public_html/graph.MY.png', width=1200, height=1200 )
+png( file='~/public_html/graph.M2.png', width=1200, height=1200 )
 
 plot( graph, layout=lay, vertex.label=NA, edge.width=edge.weights, edge.color=edge.colors )
 invisible( dev.off() )

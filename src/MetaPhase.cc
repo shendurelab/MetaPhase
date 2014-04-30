@@ -158,7 +158,7 @@ string RunParams::REFS_DIR = "refs";
 string RunParams::HIC_DIR = "HiC/MY/to_ASM2";
 string RunParams::SHOTGUN_COVERAGE_BAM = "assembly/MY/fastq/MetaYeast.to_ASM2.bam";
 string RunParams::JARVIS_PATRICK_K = "100";
-string RunParams::N_CLUSTERS = "12";
+string RunParams::N_CLUSTERS = "12"; // set to 1 to get the enrichment curve
 string RunParams::MIN_CLUSTER_NORM = "25";
 string RunParams::XGMML_FILE = "/net/gs/vol2/home/jnburton/public_html/_" + RunParams::SCENARIO + ".xgmml";
 string RunParams::LACHESIS_DIR = "Lachesis";
@@ -174,18 +174,13 @@ int main( int argc, char * argv[] )
   // Reset options for the other scenarios
   if ( RunParams::SCENARIO == "M2" ) {
     
-    bool SIM19s = false; // if false, then use the old 10kb sim assembly without R.graminis; when toggling this, make sure to edit input/M2.HiC_libs.csv too!
-    if ( SIM19s ) {
-      RunParams::ASSEMBLY_FASTA = "assembly/M2/sim.19s.fasta";
-      RunParams::HIC_DIR = "HiC/M2/to_sim.19s";
-      RunParams::N_CLUSTERS = "19";
-    }
-    else if (1) { // use the old 18-species assembly, but with new alignments
+    bool NEW = true;  // if true, then use the old 18-species assembly, but with new alignments (never use the 19s assembly because R. graminis isn't there!)
+    if (NEW) {
       RunParams::OUTPUT_DIR = "out/M2/sim.10k";
       RunParams::ASSEMBLY_FASTA = "assembly/M2/sim.10k.fasta";
       RunParams::HIC_DIR = "HiC/M2/to_sim.10k";
       RunParams::N_CLUSTERS = "18";
-      RunParams::MIN_CLUSTER_NORM = "100"; // TEMP
+      RunParams::MIN_CLUSTER_NORM = "25";
     }
     else {
       RunParams::OUTPUT_DIR = "out/M2/sim_10k";
@@ -197,21 +192,20 @@ int main( int argc, char * argv[] )
     RunParams::SHOTGUN_COVERAGE_BAM = "";
   }
   else if ( RunParams::SCENARIO == "poplar" ) {
-    RunParams::ASSEMBLY_FASTA = "assembly/poplar/PEAR_matepairs.fasta";
-    RunParams::HIC_DIR = "HiC/poplar/to_PEAR_matepairs";
-    RunParams::SHOTGUN_COVERAGE_BAM = "assembly/poplar/fastq/frags.to_PEAR_matepairs.bam";
-    RunParams::N_CLUSTERS = "6"; // TEMP
+    RunParams::ASSEMBLY_FASTA = "assembly/poplar/PEAR.w_AAGCTT.fasta";
+    RunParams::HIC_DIR = "HiC/poplar/to_PEAR.w_AAGCTT";
+    RunParams::SHOTGUN_COVERAGE_BAM = "";
+    RunParams::N_CLUSTERS = "3"; // TEMP
     RunParams::MIN_CLUSTER_NORM = "1000";
   }
   else assert( RunParams::SCENARIO == "MY" );
   
   // TEMP: other run-time parameters
   const bool load_from_SAM = true; // must be true if do_clustering = true; also necessary for Lachesis output
-  const bool do_clustering = true;
+  const bool do_clustering = false;
   const bool do_bootstrap = false;
   const bool do_merge = false;
   const bool no_output_files = false;
-  const bool MAKE_EN_CHART = false; // make the E(N) chart instead of doing regular stuff
   if ( do_clustering || !no_output_files ) assert( load_from_SAM );
   
   
@@ -271,36 +265,31 @@ int main( int argc, char * argv[] )
 
     // Run clustering (or just read the clustering result from file.)
     string clusters_file = cache_dir + "/clusters." + lib_name + ".K" + RunParams::N_CLUSTERS + ".txt";
-    PRINT( clusters_file );
-    
-    // Make an E-value chart.
-    if ( MAKE_EN_CHART ) {
-      ma.PrepLinkMatrix( boost::lexical_cast<int>(RunParams::JARVIS_PATRICK_K), shotgun_BAM );
-      for ( int Nclusters = 631; Nclusters < 680; Nclusters += 10 ) {
-	ma.Cluster( Nclusters, boost::lexical_cast<int>(RunParams::MIN_CLUSTER_NORM) );
-	ma.FindIntraClusterEnrichment();
-	PRINT( Nclusters );
-      }
-      continue;
-    }
     
     
     if ( do_clustering ) {
       if ( do_bootstrap ) ma.Bootstrap();
       ma.PrepLinkMatrix( boost::lexical_cast<int>(RunParams::JARVIS_PATRICK_K), shotgun_BAM );
       ma.Cluster( N_clusters, boost::lexical_cast<int>(RunParams::MIN_CLUSTER_NORM) );
-      ma._clusters.WriteFile( clusters_file );
+      if ( !no_output_files ) {
+	cout << Time() << ": Writing to clusters file " << clusters_file << endl;
+	ma._clusters.WriteFile( clusters_file );
+      }
     }
-    else ma._clusters.ReadFile( clusters_file );
+    else {
+      cout << Time() << ": Reading from clusters file " << clusters_file << endl;
+      ma._clusters.ReadFile( clusters_file );
+    }
     
     clustering_results.push_back( ma._clusters );
     
     ma.FindClusterDensities(false);
     
     
-    if ( load_from_SAM ) ma.FindIntraClusterEnrichment();
-    
-    //if ( load_from_SAM ) ma.FindMultiSpeciesContigs(); // find and also evaluate multi-species contigs
+    if ( load_from_SAM ) {
+      //ma.FindIntraClusterEnrichment();
+      //ma.FindMultiSpeciesContigs(); // find and also evaluate multi-species contigs
+    }
     
     // Report on the clustering result.
     ma._clusters.ReorderClustersByRefs( truth );
@@ -309,19 +298,21 @@ int main( int argc, char * argv[] )
     
     if ( no_output_files ) continue;
     
-    // Output files for certain clusters, to be used by Lachesis.  Ex
+    // Output files for certain clusters, to be used by Lachesis.
     if ( RunParams::SCENARIO == "poplar" ) { // poplar: all clusters, for tetramer testing
       for ( int i = 0; i < ma._clusters.NClusters(); i++ )
 	ma.WriteClusterFasta( out_dir + "/clusters." + boost::lexical_cast<string>(i) + ".fasta", i, false );
     }
     
     else if ( RunParams::SCENARIO == "M2" ) { // Menagerie2: M. maripaludis, B. subtilis
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".MM/contigs.fasta", 9,  true ); // 9 = M. maripaludis
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".BS/contigs.fasta", 18, true ); // 18 = B. subtilis
+      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".MM/contigs.fasta", 8,  true ); // 8 = M. maripaludis
+      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".VF/contigs.fasta", 10, true ); // 10 = V. fischeri
+      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".RP/contigs.fasta", 15, true ); // 15 = R. palustris
+      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".BS/contigs.fasta", 17, true ); // 17 = B. subtilis
     }
     else { // MetaYeast case
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".SS/contigs.fasta", 14, true ); // 14 = S. stipitis
       ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".KW/contigs.fasta", 12, true ); // 12 = K. wickerhamii
+      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".SS/contigs.fasta", 14, true ); // 14 = S. stipitis
       
       ma.WriteClusterFasta( out_dir + "/unclustered.fasta", -1, false ); // write unclustered contigs
     }
@@ -331,9 +322,9 @@ int main( int argc, char * argv[] )
     
     // Draw Figure 2a (the big clustering image.)
     string Fig2a_file = "~/public_html/graph." + RunParams::SCENARIO + ".png";
-    //ma.DrawFigure2a( Fig2a_file );
+    ma.DrawFigure2a( Fig2a_file );
     
-    ma._clusters.DrawFigure2bc( truth );
+    ma._clusters.DrawFigure2bc( truth, RunParams::SCENARIO == "MY" );
     if ( RunParams::SCENARIO == "MY" ) {
       system( ( "mv ~/public_html/Fig2b.jpg ~/public_html/Fig2b." + lib_name + ".jpg" ).c_str() );
       system( ( "mv ~/public_html/Fig2c.jpg ~/public_html/Fig2c." + lib_name + ".jpg" ).c_str() );
@@ -360,10 +351,10 @@ int main( int argc, char * argv[] )
   
   if ( no_output_files ) { cout << Time() << ": Done!" << endl; return 0; }
   
-  //merged_clusters.DrawChart( truth, false, true, 500000 );
-  //merged_clusters.DrawChart( truth, true,  true, 500000 );
+  //merged_clusters.DrawChart( truth, false, true, RunParams::SCENARIO == "MY", 500000 );
+  //merged_clusters.DrawChart( truth, true,  true, RunParams::SCENARIO == "MY", 500000 );
   //merged_clusters.DrawFigure2a();
-  merged_clusters.DrawFigure2bc( truth );
+  merged_clusters.DrawFigure2bc( truth, RunParams::SCENARIO == "MY" );
   system( "mv ~/public_html/Fig2b.jpg ~/public_html/Fig2b.merged.jpg" );
   system( "mv ~/public_html/Fig2c.jpg ~/public_html/Fig2c.merged.jpg" );
   
