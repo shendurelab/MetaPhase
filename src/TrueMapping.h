@@ -94,6 +94,8 @@ class TrueMapping
   bool QOnRefOnly( const int qID, const int rID ) const;
   // QRefIDOnly: If the query aligns to exactly one reference, returns that ref ID.  If it aligns to no refs, return -1; if multiple refs, return -2.
   int QRefIDOnly( const int qID ) const;
+  // QRefIDOnlyMY: Like QRefIDOnly, but for the MetaYeast scenario: considers refs #0,1,2,3 to be the same, returns 0 as a representative.
+  int QRefIDOnlyMY( const int qID ) const;
   // QOnAnyRef: Return true iff the query aligns to at least one reference.
   bool QOnAnyRef( const int qID ) const;
   

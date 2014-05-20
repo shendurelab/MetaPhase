@@ -109,6 +109,7 @@ AgglomerativeHierarchicalClustering( const LinkMatrixInt & matrix_orig, const Li
   // Lower numbers cause aggressive caching, which is faster - but only up to a point, and it's also more memory-intensive.
   static const int MIN_SIZE_FOR_CACHE = 20;
   static const bool DO_ENRICHMENT_CURVE = ( N_clusters == 1 );
+
   bool down_enrichment_curve = false;
   
   PRINT3( MIN_CLUSTER_NORM, MIN_SIZE_FOR_CACHE, DO_ENRICHMENT_CURVE );

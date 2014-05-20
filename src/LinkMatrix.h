@@ -9,6 +9,10 @@
  * These classes also have built-in functions for link matrix analysis and manipulation, as well as member variables N_links and N_pairs (equal to the number
  * of nonzero elements and the total amount of data, respectively.)
  *
+ * The LinkMatrix describes an alignment of Hi-C links to a draft metagenome assembly.  Each row/column in the matrix is a contig.  It does not keep track of
+ * where the Hi-C reads are aligned to the contigs, so it is not good for representing alignments to a finished reference genome.
+ *
+ *
  *
  * Josh Burton
  * February 2014
@@ -21,7 +25,7 @@
 
 #include <boost/numeric/ublas/matrix_sparse.hpp> // mapped_matrix
 
-#include "TrueMapping.h"
+//#include "TrueMapping.h"
 
 #include <vector>
 #include <string>
@@ -43,11 +47,16 @@ typedef LinkMatrix<double> LinkMatrixDouble;
 template<class T>
 struct LinkMatrix : public boost::numeric::ublas::mapped_matrix<T>
 {
-  int size() const { return this->size1(); }
-  int has_data() const { return N_links != 0; }
+  LinkMatrix<T>() { Resize(0); }
   
-  // Resize: Wrapper function for matrix initializing/resizing.  Forces the matrix to be square.  Use this, not the native mapped_matrix::resize() function.
+  int size() const { return this->size1(); }
+  int has_data() const { return N_links != 0; } // returns true if LoadFromSAM() has been called
+  
+  // Resize: Resize (and initialize!) a matrix.  Forces the matrix to be square.  Use this, not the native mapped_matrix::resize() function.
   void Resize( size_t N );
+  
+  // LoadFromSAM: Load the data from a SAM/BAM file into this LinkMatrix.  This can be called repeatedly on the same LinkMatrix, but the SAM files must match.
+  void LoadFromSAM( const string & SAM_file, const bool verbose = true );
   
   // Normalize: Normalize the link density in a matrix by contig norms (lengths).  Note that output is a LinkMatrix<double>.
   void Normalize( const vector<int> & norms, LinkMatrix<double> & normed_matrix ) const;
@@ -81,7 +90,7 @@ struct LinkMatrix : public boost::numeric::ublas::mapped_matrix<T>
   void PrintSparse() const;
   
   // WriteXGMML: Write this link matrix as an XGMML network file for visualization in Cytoscape.  Nodes are contigs, and edges are Hi-C links between contigs.
-  void WriteXGMML( const string & XGMML_file, const T & MIN_LINK_WEIGHT, const TrueMapping * truth = NULL ) const;
+  void WriteXGMML( const string & XGMML_file, const T & MIN_LINK_WEIGHT ) const;
   
   
   // Additional data structures.

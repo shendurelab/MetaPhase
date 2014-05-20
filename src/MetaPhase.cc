@@ -2,7 +2,14 @@
  *
  * MetaPhase.cc
  *
- * TODO: doc
+ * This is the top-level module of the MetaPhase software program.  This is where files are loaded in and objects are created.
+ * The other modules (each of which have their own .cc and .h file) are as follows:
+ * MetaAssembly:           The main object that contains Hi-C link data (in the form of a LinkMatrix), on which clustering and other algorithms are performed.
+ * LinkMatrix:             A glorified Boost::ublas matrix object; an upper triangular matrix containing (possibly normalized) Hi-C link density among contigs.
+ * HierarchicalClustering: The agglomerative hierarchical clustering algorithm.
+ * ClusteringResult:       A putative assignment of contigs to clusters, produced by the clustering algorithm.
+ * TrueMapping:            A record of which contigs in the draft assembly map to which reference genomes.
+ * TextFileParsers:        Several subroutines for parsing input text files and converting the results to native C++ data types.
  *
  *
  * INPUTS:
@@ -31,19 +38,16 @@
 #include <ctime>
 #include <string>
 #include <vector>
-#include <set>
 #include <iostream>
 #include <fstream>
 using namespace std;
 
 // Local includes
 #include "MetaAssembly.h"
+#include "HiCLib.h"
 #include "TrueMapping.h"
-#include "TextFileParsers.h" // TokenizeCSV
 
 // Boost includes
-#include <boost/algorithm/string.hpp> // split
-#include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 
 
@@ -52,79 +56,6 @@ using namespace std;
 
 
 
-
-// HiCLib: A simple struct containing info about a Hi-C library - all the same info as in one line of the HiC_libs CSV.
-// This struct is filled in the function ParseHiCLibsCSV.
-struct HiCLib {
-  string name; // used only in the filename of the clustering cache file
-  string RE_site; // the restriction enzyme site sequence
-  string SAM_file; // absolute location of a SAM/BAM file containing this library aligned to the draft assembly
-};
-
-
-
-// ParseHiCLibsCSV: Parse a HiC_libs CSV file and produce a vector<HiCLib>.
-// This function includes tons of sanity checks and verbose output, so that any kind of user error in creating the CSV file will be immediately reported.
-vector<HiCLib>
-ParseHiCLibsCSV( const string & CSV_file, const string & HiC_dir )
-{
-  vector<HiCLib> libs;
-  set<string> names;
-  
-  if ( !boost::filesystem::is_regular_file( CSV_file ) ) {
-    cout << "ERROR: Can't find input CSV file `" << CSV_file << "'" << endl;
-    exit(1);
-  }
-  
-  vector< vector<string> > csv_tokens;
-  TokenizeCSV( CSV_file, csv_tokens );
-  for ( size_t i = 0; i < csv_tokens.size(); i++ ) {
-    vector<string> & tokens = csv_tokens[i];
-    
-    // Skip commented lines.
-    assert( tokens.size() > 0 );
-    assert( tokens[0].size() > 0 );
-    if ( tokens[0][0] == '#' ) continue;
-    
-    
-    // Do a bunch of sanity checks.
-    string error_str = "ERROR: Input CSV file `" + CSV_file + "', line " + boost::lexical_cast<string>(i);
-    
-    if ( tokens.size() != 3 ) {
-      cout << error_str << ": Should see 3 tokens, instead saw " << tokens.size() << "." << endl;
-      exit(1);
-    }
-    
-    if ( find( names.begin(), names.end(), tokens[0] ) != names.end() ) {
-      cout << error_str << ": Abbreviated name `" << tokens[0] << "' is already used by another line in this file.  These names should be unique!" << endl;
-      exit(1);
-    }
-    
-    if ( tokens[1].find_first_not_of( "ACGTN" ) != string::npos ) {
-      cout << error_str << ": Restriction enzyme site `" << tokens[1] << "' should not contain any characters other than A,C,G,T,N!" << endl;
-      exit(1);
-    }
-    
-    string SAM = HiC_dir + "/" + tokens[2];
-    if ( !boost::filesystem::is_regular_file( SAM ) ) {
-      cout << error_str << ": Can't find SAM file `" << SAM << "'." << endl;
-      exit(1);
-    }
-    
-    // Make a HiCLib object out of these strings.
-    HiCLib lib;
-    lib.name = tokens[0];
-    lib.RE_site = tokens[1];
-    lib.SAM_file = SAM;
-    libs.push_back(lib);
-    
-    // Keep track of library names that have been seen, so that the same name won't be used twice.
-    names.insert( tokens[0] );
-  }
-  
-  
-  return libs;
-}
 
 
 
@@ -148,7 +79,7 @@ struct RunParams {
   static string LACHESIS_DIR; // relative to OUTPUT_DIR
 };
 
-string RunParams::SCENARIO = "M2"; // TEMP: MASTER SWITCH: MY, M2, poplar
+string RunParams::SCENARIO = "MY"; // TEMP: MASTER SWITCH: MY, M2, poplar
 string RunParams::ROOT_DIR = "/net/shendure/vol10/jnburton/src/MetaPhase";
 string RunParams::OUTPUT_DIR = "out/" + RunParams::SCENARIO;
 string RunParams::ASSEMBLY_FASTA = "assembly/MY.ASM2.fasta";
@@ -158,7 +89,7 @@ string RunParams::REFS_DIR = "refs";
 string RunParams::HIC_DIR = "HiC/MY/to_ASM2";
 string RunParams::SHOTGUN_COVERAGE_BAM = "assembly/MY/fastq/MetaYeast.to_ASM2.bam";
 string RunParams::JARVIS_PATRICK_K = "100";
-string RunParams::N_CLUSTERS = "12"; // set to 1 to get the enrichment curve
+string RunParams::N_CLUSTERS = "12"; // set to 1 to get the enrichment curve! - to get enrichments from stdout: grep "E\(" c | awk '{print $8,$5}' | uniq -f1 | awk '{print $2,$1}' | tail -n50
 string RunParams::MIN_CLUSTER_NORM = "25";
 string RunParams::XGMML_FILE = "/net/gs/vol2/home/jnburton/public_html/_" + RunParams::SCENARIO + ".xgmml";
 string RunParams::LACHESIS_DIR = "Lachesis";
@@ -201,12 +132,18 @@ int main( int argc, char * argv[] )
   else assert( RunParams::SCENARIO == "MY" );
   
   // TEMP: other run-time parameters
-  const bool load_from_SAM = true; // must be true if do_clustering = true; also necessary for Lachesis output
-  const bool do_clustering = false;
+  const bool load_from_SAM = true; // necessary for the clustering algorithm and many output files
+  const bool do_clustering = false; // if this is true, load_from_SAM must be true
   const bool do_bootstrap = false;
   const bool do_merge = false;
-  const bool no_output_files = false;
-  if ( do_clustering || !no_output_files ) assert( load_from_SAM );
+  // TEMP: output files - set to all false to make no output files
+  const bool output_clusters = false; // make file w/ contig clustering assignments; has no effect unless do_clustering = true
+  const bool output_network_image = true; // make the big igraph image of the clustering result - time-consuming!
+  const bool output_heatmaps = true; // make heatmaps indicating true contig placements
+  const bool output_cluster_fastas = false; // fastas of individual clusters - used by Lachesis
+  
+  // Enforce sanity in run-time parameters.
+  if ( output_network_image || output_heatmaps || output_cluster_fastas ) assert( load_from_SAM );
   
   
   // Set up output directory structure.  This includes the main output directory at <ROOT_DIR>/<OUTPUT_DIR>, along with the subdirectory cached_data.
@@ -271,7 +208,7 @@ int main( int argc, char * argv[] )
       if ( do_bootstrap ) ma.Bootstrap();
       ma.PrepLinkMatrix( boost::lexical_cast<int>(RunParams::JARVIS_PATRICK_K), shotgun_BAM );
       ma.Cluster( N_clusters, boost::lexical_cast<int>(RunParams::MIN_CLUSTER_NORM) );
-      if ( !no_output_files ) {
+      if ( output_clusters ) {
 	cout << Time() << ": Writing to clusters file " << clusters_file << endl;
 	ma._clusters.WriteFile( clusters_file );
       }
@@ -283,56 +220,61 @@ int main( int argc, char * argv[] )
     
     clustering_results.push_back( ma._clusters );
     
-    ma.FindClusterDensities(false);
-    
-    
-    if ( load_from_SAM ) {
-      //ma.FindIntraClusterEnrichment();
-      //ma.FindMultiSpeciesContigs(); // find and also evaluate multi-species contigs
+    // Optional (runtime-consuming) report functions.
+    if ( 0 ) {
+      //ma.FindClusterDensities(false);
+      if ( load_from_SAM ) {
+	//ma.FindIntraClusterEnrichment();
+	//ma.FindMultiSpeciesContigs(); // find and also evaluate multi-species contigs
+	//ma.ReportUnclusteredContigs();
+      }
     }
+    
     
     // Report on the clustering result.
     ma._clusters.ReorderClustersByRefs( truth );
     ma._clusters.Print( truth );
-    if ( load_from_SAM ) ma.ReportUnclusteredContigs();
-    
-    if ( no_output_files ) continue;
-    
-    // Output files for certain clusters, to be used by Lachesis.
-    if ( RunParams::SCENARIO == "poplar" ) { // poplar: all clusters, for tetramer testing
-      for ( int i = 0; i < ma._clusters.NClusters(); i++ )
-	ma.WriteClusterFasta( out_dir + "/clusters." + boost::lexical_cast<string>(i) + ".fasta", i, false );
-    }
-    
-    else if ( RunParams::SCENARIO == "M2" ) { // Menagerie2: M. maripaludis, B. subtilis
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".MM/contigs.fasta", 8,  true ); // 8 = M. maripaludis
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".VF/contigs.fasta", 10, true ); // 10 = V. fischeri
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".RP/contigs.fasta", 15, true ); // 15 = R. palustris
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".BS/contigs.fasta", 17, true ); // 17 = B. subtilis
-    }
-    else { // MetaYeast case
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".KW/contigs.fasta", 12, true ); // 12 = K. wickerhamii
-      ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".SS/contigs.fasta", 14, true ); // 14 = S. stipitis
-      
-      ma.WriteClusterFasta( out_dir + "/unclustered.fasta", -1, false ); // write unclustered contigs
-    }
     
     // Make plots.
     if ( !load_from_SAM ) continue;
     
-    // Draw Figure 2a (the big clustering image.)
-    string Fig2a_file = "~/public_html/graph." + RunParams::SCENARIO + ".png";
-    ma.DrawFigure2a( Fig2a_file );
+    // Draw the big image of the clustering network.
+    if ( output_network_image ) ma.DrawClusterNetwork( "~/public_html/graph." + RunParams::SCENARIO + ".png", RunParams::SCENARIO );
     
-    ma._clusters.DrawFigure2bc( truth, RunParams::SCENARIO == "MY" );
-    if ( RunParams::SCENARIO == "MY" ) {
-      system( ( "mv ~/public_html/Fig2b.jpg ~/public_html/Fig2b." + lib_name + ".jpg" ).c_str() );
-      system( ( "mv ~/public_html/Fig2c.jpg ~/public_html/Fig2c." + lib_name + ".jpg" ).c_str() );
+    // Draw the heatmaps indicating which clusters contain contigs truly belonging to which species.
+    if ( output_heatmaps ) {
+      ma._clusters.DrawTruthHeatmaps( truth, RunParams::SCENARIO == "MY" );
+      if ( RunParams::SCENARIO == "MY" ) {
+	system( ( "mv ~/public_html/Fig2b.jpg ~/public_html/Fig2b." + lib_name + ".jpg" ).c_str() );
+	system( ( "mv ~/public_html/Fig2c.jpg ~/public_html/Fig2c." + lib_name + ".jpg" ).c_str() );
+      }
     }
-    ma.WriteXGMML( RunParams::XGMML_FILE, 2 );
     
+    // Output files for certain clusters, to be used by Lachesis.
+    if ( output_cluster_fastas ) {
+      
+      if ( RunParams::SCENARIO == "poplar" ) { // poplar: all clusters, for tetramer testing
+	for ( int i = 0; i < ma._clusters.NClusters(); i++ )
+	  ma.WriteClusterFasta( out_dir + "/clusters." + boost::lexical_cast<string>(i) + ".fasta", i, false );
+      }
+      
+      else if ( RunParams::SCENARIO == "M2" ) { // Menagerie2: M. maripaludis, B. subtilis
+	ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".MM/contigs.fasta", 8,  true ); // 8 = M. maripaludis
+	ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".VF/contigs.fasta", 10, true ); // 10 = V. fischeri
+	ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".RP/contigs.fasta", 15, true ); // 15 = R. palustris
+	ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".BS/contigs.fasta", 17, true ); // 17 = B. subtilis
+      }
+      else { // MetaYeast case
+	ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".KW/contigs.fasta", 12, true ); // 12 = K. wickerhamii
+	ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + ".SS/contigs.fasta", 14, true ); // 14 = S. stipitis
+	
+	ma.WriteClusterFasta( out_dir + "/unclustered.fasta", -1, false ); // write unclustered contigs
+      }
+      
+    }
     
-    
+    // XGMML file for Cytoscape: I don't use this anymore
+    //ma.WriteXGMML( RunParams::XGMML_FILE, 2 );
   }
   
   
@@ -349,30 +291,27 @@ int main( int argc, char * argv[] )
   merged_clusters.ReorderClustersByRefs( truth );
   merged_clusters.Print( truth );
   
-  if ( no_output_files ) { cout << Time() << ": Done!" << endl; return 0; }
-  
-  //merged_clusters.DrawChart( truth, false, true, RunParams::SCENARIO == "MY", 500000 );
-  //merged_clusters.DrawChart( truth, true,  true, RunParams::SCENARIO == "MY", 500000 );
-  //merged_clusters.DrawFigure2a();
-  merged_clusters.DrawFigure2bc( truth, RunParams::SCENARIO == "MY" );
-  system( "mv ~/public_html/Fig2b.jpg ~/public_html/Fig2b.merged.jpg" );
-  system( "mv ~/public_html/Fig2c.jpg ~/public_html/Fig2c.merged.jpg" );
+  if ( output_heatmaps ) {
+    merged_clusters.DrawTruthHeatmaps( truth, RunParams::SCENARIO == "MY" );
+    system( "mv ~/public_html/Fig2b.jpg ~/public_html/Fig2b.merged.jpg" );
+    system( "mv ~/public_html/Fig2c.jpg ~/public_html/Fig2c.merged.jpg" );
+  }
   
   // Write the merged result to file.
-  string clusters_file = cache_dir + "/clusters.HN.K" + boost::lexical_cast<string>( merged_clusters.NClusters() ) + ".txt";
-  merged_clusters.WriteFile( clusters_file );
+  if ( output_clusters ) {
+    string clusters_file = cache_dir + "/clusters.HN.K" + boost::lexical_cast<string>( merged_clusters.NClusters() ) + ".txt";
+    merged_clusters.WriteFile( clusters_file );
+  }
   
   
-  // Create a MetaAssembly from this merged result, just to write output files to be input into Lachesis.
+  // Create a MetaAssembly from this merged result, just for output purposes.
   MetaAssembly ma( assembly_fasta, "AAGCTT_CCATGG" );
   ma.SetClusters( merged_clusters );
   ma.LoadTrueMapping( &truth );
-  
-  ma.WriteClusterFasta( out_dir + "/" + RunParams::LACHESIS_DIR + "/contigs.fasta", 14, true ); // 14 = S. stipitis
-  
-  //ma.LoadFromSAM( RunParams::ROOT_DIR + "/" + RunParams::HIC_DIR +  "/Nco1.all_lens.REduced.500.bam" );
-  //ma.LoadFromSAM( RunParams::ROOT_DIR + "/" + RunParams::HIC_DIR + "/Hind3.all_lens.REduced.500.bam" );
-  //ma.FindMultiSpeciesContigs(); // find and also evaluate multi-species contigs (needs link data via LoadFromSAM())
+  ma.LoadFromSAM( RunParams::ROOT_DIR + "/" + RunParams::HIC_DIR +  "/Nco1.all_lens.REduced.500.bam" );
+  ma.LoadFromSAM( RunParams::ROOT_DIR + "/" + RunParams::HIC_DIR + "/Hind3.all_lens.REduced.500.bam" );
+  ma.FindMultiSpeciesContigs(); // find and also evaluate multi-species contigs (needs link data via LoadFromSAM())
+  if ( output_network_image ) ma.DrawClusterNetwork( "~/public_html/graph." + RunParams::SCENARIO + ".merged.png", RunParams::SCENARIO );
   
   
   cout << Time() << ": Done!" << endl;

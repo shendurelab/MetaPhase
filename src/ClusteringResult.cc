@@ -375,17 +375,9 @@ ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_uniqu
 	cluster_N_to_ref  [cluster][j]++;
 	cluster_len_to_ref[cluster][j] += len;
       }
-      if ( MERGE_SC ) { // Consider contigs that align only to the S. cerevisiae strains as "unique alignments"
-	bool only = false;
-	if ( j >= 4 && truth.QOnRefOnly(i,j) ) only = true;
-	if ( j <  4 && truth.RefsBitcode(i) <= 15 ) only = true;
-	if ( only ) {
-	  cluster_N_to_ref_only  [cluster][j]++;
-	  cluster_len_to_ref_only[cluster][j] += len;
-	}
-      }
-      else
-      if ( truth.QOnRefOnly(i,j) ) {
+      
+      bool on_ref_only = MERGE_SC ? ( truth.QRefIDOnlyMY(i) == j ) : ( truth.QOnRefOnly(i,j) );
+      if ( on_ref_only ) {
 	cluster_N_to_ref_only  [cluster][j]++;
 	cluster_len_to_ref_only[cluster][j] += len;
       }
@@ -395,7 +387,7 @@ ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_uniqu
   
   
   // Write the results to a heatmap file (out), and also to a text chart file (out_chart).
-  string suffix = "ClusteringResult."
+  string suffix = "CR."
     + ( require_unique_alignment ? string("u.") : string("nu.") )
     + boost::lexical_cast<string>( NClusters() ) + ".txt";
   ofstream out_chart  ( ( "chart."   + suffix ).c_str(), ios::out ); 
@@ -449,11 +441,11 @@ ClusteringResult::DrawChart( const TrueMapping & truth, const bool require_uniqu
 
  
 
-// DrawFigure2bc: Call DrawChart to create the chart and heatmap files, then call a script in ../figs to generate Figures 2b and 2c of the paper.
+// DrawTruthHeatmaps: Call DrawChart to create the chart and heatmap files, then call a script in ../figs to generate Figures 2b and 2c of the paper.
 void
-ClusteringResult::DrawFigure2bc( const TrueMapping & truth, const bool MY ) const
+ClusteringResult::DrawTruthHeatmaps( const TrueMapping & truth, const bool MY ) const
 {
-  // First call DrawChart to create the files heatmap.ClusteringResult.A.B.txt, where A = "u", "nu" (unique, nonunique) and B = NClusters().
+  // First call DrawChart to create the files heatmap.CR.A.B.txt, where A = "u", "nu" (unique, nonunique) and B = NClusters().
   DrawChart( truth, false, false, MY, 500000 );
   DrawChart( truth, true,  false, MY, 500000 );
   
@@ -461,8 +453,8 @@ ClusteringResult::DrawFigure2bc( const TrueMapping & truth, const bool MY ) cons
   for ( int i = 0; i < 2; i++ ) {
     string version = i ? "nu" : "u";
     string fignum = i ? "2c" : "2b";
-    string file = "heatmap.ClusteringResult." + version + "." + boost::lexical_cast<string>( NClusters() ) + ".txt";
-    system ( ( "../figs/2/MakeClusteringResultHeatmap.R " + file ).c_str() );
+    string file = "heatmap.CR." + version + "." + boost::lexical_cast<string>( NClusters() ) + ".txt";
+    system ( ( "../figs/MakeClusteringResultHeatmap.R " + file ).c_str() );
     system ( ( "cp ~/public_html/MakeClusteringResultHeatmap.jpg ~/public_html/Fig" + fignum + ".jpg" ).c_str() ); // put the heatmaps in place
   }
   

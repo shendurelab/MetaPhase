@@ -11,10 +11,12 @@
 
 
 #include "TimeMem.h"
-#include "TrueMapping.h"
+//#include "TrueMapping.h"
 #include "TextFileParsers.h"
+#include "gtools/SAMStepper.h" // SAMStepper, NTargetsInSAM
 
 // Boost libraries
+#include <boost/filesystem.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 
@@ -22,6 +24,7 @@
 // Template instantiations for the functions below.
 template void   LinkMatrix<int64_t>::Resize( size_t );
 template void   LinkMatrix<double >::Resize( size_t );
+template void   LinkMatrix<int64_t>::LoadFromSAM( const string &, const bool );
 template void   LinkMatrix<int64_t>::Bootstrap( const bool );
 template void   LinkMatrix<int64_t>::Normalize( const vector<int> &, LinkMatrix<double> & ) const;
 template void   LinkMatrix<int64_t>::LimitNeighbors( const int, const bool );
@@ -31,7 +34,7 @@ template void   LinkMatrix<double >::FindIsolatedNodes( const int );
 template void   LinkMatrix<int64_t>::IsolateNormalizeLimit( const vector<int> &, const int, const int, const string &, LinkMatrix<double> & ) const;
 template double LinkMatrix<int64_t>::IntraClusterEnrichment( const vector<int> &, const vector<int> &, const vector<int> &, const int ) const;
 template void   LinkMatrix<int64_t>::PrintSparse() const;
-template void   LinkMatrix<double> ::WriteXGMML( const string &, const double &, const TrueMapping * ) const;
+template void   LinkMatrix<double> ::WriteXGMML( const string &, const double & ) const;
 
 
 template<class T> void LinkMatrix<T>::Resize( size_t N )
@@ -45,6 +48,89 @@ template<class T> void LinkMatrix<T>::Resize( size_t N )
 
 
 
+// LoadFromSAM: Load the data from a SAM/BAM file into this LinkMatrix.
+// This can be called repeatedly on the same LinkMatrix, but the SAM files must match - i.e., must be aligned to the same target.
+template<class T> void
+LinkMatrix<T>::LoadFromSAM( const string & SAM_file, const bool verbose )
+{
+  if ( verbose ) cout << "LinkMatrix: Loading from SAM file " << SAM_file << endl;
+  
+  if ( !boost::filesystem::is_regular_file( SAM_file ) ) {
+    cout << "ERROR: LinkMatrix::LoadFromSAM: Can't find SAM/BAM file `" << SAM_file << "'" << endl;
+    exit(1);
+  }
+  
+  
+  int N_contigs = NTargetsInSAM( SAM_file );
+  
+  // If this is the first SAM file loaded into this LinkMatrix, resize this LinkMatrix.  The matrix is upper triangular, so matrix(i,j) = 0 unless j > i.
+  // It's a sparse matrix so it doesn't take up too much memory.
+  if ( !has_data() ) Resize( N_contigs );
+  // If this isn't the first SAM file, it must match previous SAM files.
+  else assert( N_contigs == size() );
+  
+  int N_pairs_here = 0, N_links_here = 0;
+  vector<bool> seen_link( N_contigs, false );
+  
+  // Set up a SAMStepper object to read in the alignments.
+  SAMStepper stepper( SAM_file );
+  stepper.FilterAlignedPairs(); // Only look at read pairs where both reads aligned to the draft assembly.
+  
+  
+  // Loop over all pairs of alignments in the SAM file.
+  // Note that the next_pair() function assumes that all reads in a SAM file are paired, and the two reads in a pair occur in consecutive order.
+  for ( pair< bam1_t *, bam1_t *> aligns = stepper.next_pair(); aligns.first != NULL; aligns = stepper.next_pair() ) {
+    
+    if ( verbose && stepper.N_aligns_read() % 1000000 == 0 ) cout << "." << flush;
+    
+    const bam1_core_t & c1 = aligns.first->core;
+    const bam1_core_t & c2 = aligns.second->core;
+    
+    // If the two reads align to the same contig, the link isn't informative, so skip it.
+    if ( c1.tid == c2.tid ) continue;
+    
+    // Ignore reads with mapping quality 0.
+    if ( c1.qual == 0 || c2.qual == 0 ) continue;
+    
+    // Sanity checks to make sure the read pairs appear as they should in the SAM file.  If they don't, the read pair is corrupt, so skip it.
+    if ( c1.tid != c2.mtid ) continue;
+    if ( c2.tid != c1.mtid ) continue;
+    if ( c1.pos != c2.mpos ) continue;
+    if ( c2.pos != c1.mpos ) continue;
+    if ( c1.tid >= N_contigs ) continue;
+    if ( c2.tid >= N_contigs ) continue;
+    
+    // Rearrange the order of the contig IDs if necessary, so that ID1 < ID2.
+    int ID1, ID2;
+    if ( c1.tid < c2.tid ) { ID1 = c1.tid; ID2 = c2.tid; }
+    else                   { ID1 = c2.tid; ID2 = c1.tid; }
+    //PRINT2( ID1, ID2 );
+    
+    
+    // Add to tallies.
+    if ( (*this)(ID1,ID2) == 0 ) N_links_here++;
+    N_pairs_here++;
+    seen_link[ID1] = true;
+    seen_link[ID2] = true;
+    
+    // Add the data to this matrix.
+    (*this)(ID1,ID2) += 1;
+  }
+  
+  
+  if ( verbose ) cout << endl;
+  
+  // Update the LinkMatrix variables.
+  N_links += N_links_here;
+  N_pairs += N_pairs_here;
+  
+  if ( verbose ) cout << Time() << ": N aligns/pairs read from this file: " << stepper.N_aligns_read() << "/" << stepper.N_pairs_read() << "; N pairs used: " << N_pairs_here << "; N contigs = " << N_contigs << "; matrix now has " << N_links << " elements with sum = " << N_pairs << endl;
+  
+  
+  int N_singletons = count( seen_link.begin(), seen_link.end(), false );
+  PRINT( N_singletons );
+}
+  
 
 
 
@@ -451,7 +537,7 @@ LinkMatrix<T>::PrintSparse() const
 // If truth != NULL, give the nodes their true unique mappings.
 // This is a lightweight format, with no additional information (node lengths, node names, cluster IDs, etc.)  Compare to MetaAssembly::WriteXGMML().
 template<class T> void
-LinkMatrix<T>::WriteXGMML( const string & XGMML_file, const T & MIN_LINK_WEIGHT, const TrueMapping * truth ) const
+LinkMatrix<T>::WriteXGMML( const string & XGMML_file, const T & MIN_LINK_WEIGHT ) const
 {
   cout << Time() << ": WriteXGMML!  Writing to file " << XGMML_file << " for Cytoscape to read..." << endl;
   
@@ -490,8 +576,8 @@ LinkMatrix<T>::WriteXGMML( const string & XGMML_file, const T & MIN_LINK_WEIGHT,
     if ( seen[i] ) {
       XGMML << "  <node id=\"" << i << "\" label=\"" << i << "\">" << endl;
       N_nodes_used++;
-      if ( truth != NULL )
-	XGMML << "    <att name=\"ref_ID\" type=\"integer\" value=\"" << truth->QRefIDOnly(i) << "\"/>" << endl;
+      //if ( truth != NULL )
+      //XGMML << "    <att name=\"ref_ID\" type=\"integer\" value=\"" << truth->QRefIDOnly(i) << "\"/>" << endl;
       XGMML << "  </node>" << endl;
     }
   

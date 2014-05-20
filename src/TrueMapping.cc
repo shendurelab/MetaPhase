@@ -202,6 +202,25 @@ TrueMapping::QRefIDOnly( const int qID ) const
 }
 
 
+// QRefIDOnlyMY: Like QRefIDOnly, but for the MetaYeast scenario: considers refs #0,1,2,3 to be the same, returns 0 as a representative.
+int
+TrueMapping::QRefIDOnlyMY( const int qID ) const
+{
+  assert( qID >= 0 && qID < _N_query_seqs );
+  
+  int rID = -1;
+  for ( int i = 0; i < _N_refs; i++ )
+    if ( _aligns[i][qID] ) {
+      if ( i < 4 ) rID = 0; // first four iterations are all S. cerevisiae species, so just mark this as aligning to SC-FY
+      else if ( rID == -1 ) rID = i;
+      else return -2; // query aligns to multiple refs, and not just multiple S. cerevisiae refs
+    }
+  
+  return rID; // will either still be -1 (if qID doesn't align to any refs) or will be a ref ID >= 0
+}
+
+
+
 // QOnAnyRef: Return true iff the query aligns to at least one reference.
 bool
 TrueMapping::QOnAnyRef( const int qID ) const
@@ -313,7 +332,7 @@ TrueMapping::BlastAlign( const string & assembly_fasta, const int ref_ID, const 
   // TODO: also, in the future, use the Blast API to do this natively in C++: http://www.ncbi.nlm.nih.gov/books/NBK7152/
   string blast_parameters = "-perc_identity 95 -evalue 1e-30 -word_size 50";
   // TEMP: alterations for the poplar metagenome assembly
-  //blast_parameters = "-perc_identity 90 -evalue 1e-5 -word_size 20";
+  //blast_parameters = "-perc_identity 90 -evalue 1e-10 -word_size 20";
   
   string blast_file = cache_file + "." + boost::lexical_cast<string>(ref_ID) + ".blast";
   string cmd = "blastn -query " + assembly_fasta + " -db " + ref_blastdb + " " + blast_parameters + " -out " + blast_file + " -outfmt \"6 qseqid\" -num_threads 16";

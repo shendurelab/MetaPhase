@@ -75,8 +75,9 @@ class MetaAssembly
   // Analyze the contigs that aren't clustered.  Gives a more thorough report if truth data is available (_truth != NULL).
   void ReportUnclusteredContigs( ostream & out = cout ) const;
   
-  // DrawFigure2a: Make an igraph output file that depicts this graph and clustering result as an awesome image.
-  void DrawFigure2a( const string & OUT_PNG ) const;
+  // DrawClusterNetwork: Make an igraph output file that depicts this graph and clustering result as an awesome image.
+  // The only effect of the SCENARIO option is to enable some hard-wired color palettes designed for certain sets of species.
+  void DrawClusterNetwork( const string & OUT_PNG, const string SCENARIO = "MY" ) const;
   
   // Write this link matrix as an XGMML network file for visualization in Cytoscape.  Nodes are contigs, and edges are Hi-C links between contigs.
   // Clustering and truth information about each contig are included as attributes, and can be used within Cytoscape to change node size, color, etc.

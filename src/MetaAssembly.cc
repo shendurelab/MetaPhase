@@ -1,7 +1,7 @@
 // For documentation, see MetaAssembly.h
 #include "MetaAssembly.h"
 #include "TrueMapping.h"
-#include "TextFileParsers.h" // TokenizeFile, GetFastaNames
+#include "TextFileParsers.h" // TokenizeFile, GetFastaNames, GetFastaSizes
 #include "LinkMatrix.h" // LinkMatrixInt
 #include "HierarchicalClustering.h" // AgglomerativeHierarchicalClustering
 #include "DensityClustering.h" // DensityClustering
@@ -20,7 +20,7 @@
 // Modules in ~/include (must add -L~/include and -lJ<module> to link)
 #include "TimeMem.h"
 #include "gtools/N50.h"
-#include "gtools/SAMStepper.h" // SAMStepper, NTargetsInSAM
+#include "gtools/SAMStepper.h" // NTargetsInSAM
 
 
 
@@ -42,30 +42,9 @@ MetaAssembly::MetaAssembly( const string & assembly_fasta, const string & RE_sit
   assert( _N_contigs > 0 );
   
   
-  // Create the FastaSize file, if necessary.
-  string FastaSize_file = assembly_fasta + ".FastaSize";
-  if ( !boost::filesystem::is_regular_file( FastaSize_file ) ) {
-    string cmd = "FastaSize " + assembly_fasta + " > " + FastaSize_file;
-    cout << Time() << ": " << cmd << endl;
-    system( cmd.c_str() );
-    assert( boost::filesystem::is_regular_file( FastaSize_file ) );
-  }
-  
-  _contig_lengths.resize( _N_contigs );
-  
-  vector< vector<string> > FastaSize_tokens;
-  TokenizeFile( assembly_fasta + ".FastaSize", FastaSize_tokens, true );
-  assert( _N_contigs == (int) FastaSize_tokens.size() - 1 ); // the FastaSize file has one line for each contig, plus a summary line at the end
-  
-  // Get the contig lengths from the fasta.FastaSize file.  For each line in the FastaSize file (before the last), there should be 3 tokens: a blank one
-  // (whitespace), a number indicating length, and a chromosome name.
-  for ( int i = 0; i < _N_contigs; i++ ) {
-    vector<string> & t = FastaSize_tokens[i];
-    assert( t.size() == 3 );
-    assert( t[0] == "" );
-    assert( t[2] == _contig_names[i] );
-    _contig_lengths[i] = boost::lexical_cast<int>( t[1] );
-  }
+  // Get the contig lengths from the fasta.FastaSize file.  Create the FastaSize file if necessary.
+  _contig_lengths = GetFastaSizes( assembly_fasta );
+  assert( _contig_lengths.size() == _contig_names.size() );
   
   
   
@@ -103,79 +82,13 @@ MetaAssembly::MetaAssembly( const string & assembly_fasta, const string & RE_sit
 void
 MetaAssembly::LoadFromSAM( const string & SAM_file )
 {
-  cout << Time() << ": Loading from SAM file " << SAM_file << endl;
-  _SAM_files.push_back( SAM_file );
-  
   if ( NTargetsInSAM( SAM_file ) != _N_contigs ) {
     cout << "ERROR: SAM file " << SAM_file << " has " << NTargetsInSAM( SAM_file ) << " target contigs, but genome assembly fasta has " << _N_contigs << " contigs.  Are your files mismatched?" << endl;
     exit(1);
   }
   
-  bool verbose = true;
-  
-  // If this is the first SAM file, set up the link matrix to handle the data as it comes in.  The matrix is upper triangular, so matrix(i,j) = 0 unless j > i.
-  // It's a sparse matrix so it doesn't take up too much memory.
-  if ( _link_matrix.size1() == 0 ) _link_matrix.Resize( _N_contigs );
-  
-  int N_pairs_here = 0, N_links_here = 0;
-  vector<bool> seen_link( _N_contigs, false );
-  
-  // Set up a SAMStepper object to read in the alignments.
-  SAMStepper stepper(SAM_file);
-  stepper.FilterAlignedPairs(); // Only look at read pairs where both reads aligned to the draft assembly.
-  
-  
-  // Loop over all pairs of alignments in the SAM file.
-  // Note that the next_pair() function assumes that all reads in a SAM file are paired, and the two reads in a pair occur in consecutive order.
-  for ( pair< bam1_t *, bam1_t *> aligns = stepper.next_pair(); aligns.first != NULL; aligns = stepper.next_pair() ) {
-    
-    if ( verbose && stepper.N_aligns_read() % 1000000 == 0 ) cout << "." << flush;
-    
-    const bam1_core_t & c1 = aligns.first->core;
-    const bam1_core_t & c2 = aligns.second->core;
-    
-    // If the two reads align to the same contig, the link isn't informative, so skip it.
-    if ( c1.tid == c2.tid ) continue;
-    
-    // Ignore reads with mapping quality 0.
-    if ( c1.qual == 0 || c2.qual == 0 ) continue;
-    
-    // Sanity checks to make sure the read pairs appear as they should in the SAM file.  If they don't, the read pair is corrupt, so skip it.
-    if ( c1.tid != c2.mtid ) continue;
-    if ( c2.tid != c1.mtid ) continue;
-    if ( c1.pos != c2.mpos ) continue;
-    if ( c2.pos != c1.mpos ) continue;
-    if ( c1.tid >= _N_contigs ) continue;
-    if ( c2.tid >= _N_contigs ) continue;
-    
-    // Rearrange the order of the contig IDs if necessary, so that ID1 < ID2.
-    int ID1, ID2;
-    if ( c1.tid < c2.tid ) { ID1 = c1.tid; ID2 = c2.tid; }
-    else                   { ID1 = c2.tid; ID2 = c1.tid; }
-    //PRINT2( ID1, ID2 );
-    
-    
-    // Add to tallies.
-    if ( _link_matrix(ID1,ID2) == 0 ) N_links_here++;
-    N_pairs_here++;
-    seen_link[ID1] = true;
-    seen_link[ID2] = true;
-    
-    // Add the data to the matrix.
-    _link_matrix(ID1,ID2) += 1;
-  }
-  
-  
-  if ( verbose ) cout << endl;
-  
-  _link_matrix.N_links += N_links_here;
-  _link_matrix.N_pairs += N_pairs_here;
-  
-  cout << Time() << ": N aligns/pairs read from this file: " << stepper.N_aligns_read() << "/" << stepper.N_pairs_read() << "; N pairs used: " << N_pairs_here << "; N contigs = " << _N_contigs << "; matrix now has " << _link_matrix.N_links << " elements with sum = " << _link_matrix.N_pairs << endl;
-  
-  
-  int N_singletons = count( seen_link.begin(), seen_link.end(), false );
-  PRINT( N_singletons );
+  _SAM_files.push_back( SAM_file );
+  _link_matrix.LoadFromSAM( SAM_file );
 }
 
 
@@ -703,9 +616,13 @@ MetaAssembly::ReportUnclusteredContigs( ostream & out  ) const
 }
 
 
-// DrawFigure2a: Make an igraph output file that depicts this graph and clustering result as an awesome image.
+
+
+// DrawClusterNetwork: Make an igraph output file that depicts this graph and clustering result as an awesome image.
+// The only effect of the SCENARIO option is to enable some hard-wired color palettes designed for certain sets of species.
+// Note that contigs are colored by what reference they truly map to, and contigs that don't map uniquely to a single species aren't plotted.
 void
-MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
+MetaAssembly::DrawClusterNetwork( const string & OUT_PNG, const string SCENARIO ) const
 {
   cout << Time() << ": DrawFigure2a" << endl;
   
@@ -723,7 +640,7 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
   const double edge_weight_scaling_factor = 0.5;
   //const int top_N_contigs_per_ref = 100; // a contig will be included in the chart if it's among the top 100 longest contigs that align to its reference...
   //const int top_N_contigs_per_ref_only = 100; // ...or if it's among the top 10 contigs that align only to its reference
-  const int top_N_contigs_per_cluster = 200;
+  const int top_N_contigs_per_cluster = 200; // TEMP: 200
   const int edge_weight_cutoff = 0; // throw out edges with fewer than this many links
   const double edge_density_cutoff = 0.01; // throw out edges with fewer than this many links per RE_site^2
   const double repulse_exp = 0.2; // 0 = perfect lattice spacing of vertices; 1 = extreme separation of vertices by cluster
@@ -774,7 +691,8 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
     int N = 0;
     for ( multimap< int,int,greater<int> >::const_iterator it = cluster_contigs_by_len[cID].begin(); it != cluster_contigs_by_len[cID].end(); ++it ) {
       //PRINT4( cID, N, it->first, it->second );
-      if ( color_by_truth && _truth->QRefIDOnly( it->second ) < 0 ) continue;
+      bool ref_ID = SCENARIO == "MY" ? _truth->QRefIDOnlyMY( it->second ) : _truth->QRefIDOnly( it->second );
+      if ( color_by_truth && ref_ID < 0 ) continue;
       
       contigs_to_use[ it->second ] = true;
       if ( ++N == top_N_contigs_per_cluster ) break;
@@ -784,6 +702,7 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
   
   int N_usable_contigs = count( contigs_to_use.begin(), contigs_to_use.end(), true );
   PRINT( N_usable_contigs );
+  
   
   
   
@@ -811,7 +730,7 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
       // Calculate the edge weight.  If it's not big enough, skip the edge.
       int edge_weight = *it2;
       double edge_density = double(edge_weight) / _contig_RE_sites[c1] / _contig_RE_sites[c2];
-      if ( edge_weight  < edge_weight_cutoff )  continue; // if the edge is too small , don't write the edge (cutoff can be total weight, or weight per RE^2)
+      if ( edge_weight  < edge_weight_cutoff )  continue; // if the edge is too small, don't write the edge (cutoff can be total weight, or weight per RE^2)
       if ( edge_density < edge_density_cutoff ) continue;
       
       
@@ -821,9 +740,14 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
       int C2 = _clusters.cluster_ID(c2);
       int cluster = C1 == C2 ? C1 : -1;
       
-      int truth1 = _truth->QRefIDOnly(c1);
-      int truth2 = _truth->QRefIDOnly(c2);
+      // For MetaYeast, consider links between different strains of S. cerevisiae to be intra-species.
+      int truth1 = SCENARIO == "MY" ? _truth->QRefIDOnlyMY(c1) : _truth->QRefIDOnly(c1);
+      int truth2 = SCENARIO == "MY" ? _truth->QRefIDOnlyMY(c2) : _truth->QRefIDOnly(c2);
+      if ( truth1 < 0 || truth2 < 0 ) continue; // don't print edges between nodes that don't align uniquely to a single reference
+      
       int truth = ( truth1 == truth2 && truth1 >= 0 ) ? truth1 : -1;
+      //PRINT6( c1, c2, cluster, truth1, truth2, truth );
+      //if ( truth < 0 ) continue;
       
       
       igraph_edges_chart << (N_edges++) << '\t' << edge_weight << "\t" << prefix << c1 << "\t" << prefix << c2 << '\t' << cluster << '\t' << truth << endl;
@@ -844,14 +768,58 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
   ofstream igraph_nodes_chart( igraph_nodes_file.c_str(), ios::out );
   igraph_nodes_chart << "NAME\tLENGTH\tCLUSTER\tTRUTH\tUSED" << endl;
   
-  for ( int i = 0; i < _N_contigs; i++ )
-    igraph_nodes_chart << prefix << i << '\t' << _contig_lengths[i] << '\t' << _clusters.cluster_ID(i) << '\t' << _truth->QRefIDOnly(i) << '\t' << noboolalpha << contigs_used[i] << endl;
+  for ( int i = 0; i < _N_contigs; i++ ) {
+    int truth = SCENARIO == "MY" ? _truth->QRefIDOnlyMY(i) : _truth->QRefIDOnly(i);
+    if ( truth < 0 ) continue; // don't print nodes that don't align uniquely to a single reference
+    igraph_nodes_chart << prefix << i << '\t' << _contig_lengths[i] << '\t' << _clusters.cluster_ID(i) << '\t' << truth << '\t' << noboolalpha << contigs_used[i] << endl;
+  }
   
   igraph_nodes_chart.close();
   
   
   int N_nodes = count( contigs_used.begin(), contigs_used.end(), true );
   PRINT2( N_nodes, N_edges );
+  
+  
+  // Set up the color scheme for the igraph_R file.
+  string palette;
+  if ( SCENARIO == "MY" ) palette =
+    "cSC <- brewer.pal( 9, 'Blues' )[5] # Saint blue\n"
+    "cSP <- brewer.pal( 9, 'Set1'  )[9] # gray\n"
+    "cSM <- brewer.pal( 8, 'Dark2' )[6] # orange-yellow\n"
+    "cSK <- brewer.pal( 9, 'Set1'  )[7] # brown\n"
+    "cSB <- brewer.pal( 9, 'Set1'  )[8] # light pink\n"
+    "cNC <- brewer.pal( 9, 'Reds')  [8] # deep red\n"
+    "cLW <- brewer.pal( 9, 'Blues' )[8] # deep blue\n"
+    "cLK <- brewer.pal( 9, 'PRGn'  )[1] # purple\n"
+    "cKL <- brewer.pal( 9, 'Set1'  )[6] # yellow\n"
+    "cKW <- brewer.pal( 5, 'PiYG'  )[1] # magenta\n"
+    "cEG <- brewer.pal( 5, 'PiYG'  )[5] # green\n"
+    "cSS <- brewer.pal( 9, 'YlOrRd')[6] # orange-red\n"
+    "cKP <- 'black'\n"
+    "palette <- c( cSC, cSC, cSC, cSC, cSP, cSM, cSK, cSB, cNC, cLW, cLK, cKL, cKW, cEG, cSS, cKP )\n";
+  else if ( SCENARIO == "M2" ) palette =
+    "cSC <- brewer.pal( 7, 'PuBu'   )[7] # deepest blue\n"
+    "cZR <- brewer.pal( 7, 'PuBu'   )[6]\n"
+    "cLT <- brewer.pal( 7, 'PuBu'   )[5] # lightest blue\n"
+    "cKA <- brewer.pal( 7, 'PuBuGn' )[6]\n"
+    "cHP <- brewer.pal( 7, 'PuBuGn' )[7] # deepest green-blue\n"
+    "cKP <- brewer.pal( 7, 'YlGn'   )[5] # lightest green\n"
+    "czP <- brewer.pal( 7, 'YlGn'   )[6]\n"
+    "czJ <- brewer.pal( 7, 'YlGn'   )[7] # deepest green\n"
+    "cMM <- brewer.pal( 9, 'Set1'   )[6] # yellow\n"
+    "cEC <- brewer.pal( 9, 'YlOrRd' )[9] # deepest red\n"
+    "cVF <- brewer.pal( 9, 'YlOrRd' )[8]\n"
+    "cPF <- brewer.pal( 9, 'YlOrRd' )[7]\n"
+    "cAB <- brewer.pal( 9, 'YlOrRd' )[6]\n"
+    "cBT <- brewer.pal( 9, 'YlOrRd' )[5] # orange\n"
+    "cAT <- brewer.pal( 9, 'YlOrBr' )[6]\n"
+    "cRP <- brewer.pal( 9, 'YlOrBr' )[7]\n"
+    "cFJ <- brewer.pal( 9, 'YlOrBr' )[8]\n"
+    "cBS <- brewer.pal( 9, 'YlOrBr' )[9] # brown\n"
+    "palette <- c( cSC, cZR, cLT, cKA, cHP,cKP, czP, czJ, cMM, cEC, cVF, cPF, cAB, cBT, cAT, cRP, cFJ, cBS )\n";
+  
+  
   
   // Open the igraph_R file.  This is the R script that we'll be running to create the igraph plot.
   string igraph_R_script = "Fig2a.R";
@@ -895,11 +863,11 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
     "node.sizes <- sapply( node.names, function(x) node.chart[node.chart$NAME==x,'LENGTH'] )\n"
     "V(graph)$size <- sqrt( node.sizes ) * " << node_size_scaling_factor << "\n\n\n\n";
   
-  // Write out the part of the R script that converts contig clusters into node colors.
+  // Write out the part of the R script that converts contig clusters into node colors.  Use the color palette appropriate for this scenario.
   string column_name = color_by_truth ? "TRUTH" : "CLUSTER";
   igraph_R <<
     "# Get an array of colors for each node according to the node/contig's cluster.\n"
-    "palette <- c( brewer.pal( 3, 'Pastel1' ), brewer.pal( 9, 'Set1' ) )\n" // TODO: de-hardwire number of colors
+	   << palette <<
     "node.colors <- sapply( node.names, function(x) palette[ node.chart[node.chart$NAME==x,'" << column_name << "'] + 1 ] ) # +1 for one-indexing\n"
     "V(graph)$color <- node.colors\n\n\n\n";
   
@@ -908,7 +876,7 @@ MetaAssembly::DrawFigure2a( const string & OUT_PNG ) const
   igraph_R <<
     "edge.weights <- sqrt( edge.chart$NLINKS * " << edge_weight_scaling_factor << " )\n\n"
     "# Load edges' cluster IDs and convert them to colors.  This requires a modified palette with an extra color for unclustered edges (-1).\n"
-    "palette2 <- c( 'gray50', palette )\n"
+    "palette2 <- c( 'gray70', palette )\n"
     "edge.colors <- palette2[ edge.chart$" << column_name << " + 2 ] # +1 for one-indexing, +1 for the '-1' entries\n"
     "\n\n\n\n";
   
