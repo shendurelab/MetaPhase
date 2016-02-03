@@ -1,0 +1,8 @@
+# This file describes a set of Hi-C libraries and has the following format:
+# First non-commented line: A single token giving a directory, relative to the MetaPhase run directory
+# All other non-commented lines: 3 tokens:
+#    1. Library name (can be arbitrary)
+#    2. RE site sequence
+#    3. SAM/BAM file (in the directory on the first line) that contains the reads in that library aligned to the draft assembly
+test_case/HiC
+BV.HindIII	AAGCTT	BV.H3.head.bmt.bam
