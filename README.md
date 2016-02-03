@@ -82,7 +82,7 @@ MetaPhase also requires the boost C++ libraries ([http://www.boost.org/](http://
 
 #### B2. Downloading the MetaPhase package
 
-Download the MetaPhase package from [http://shendurelab.github.io/MetaPhase/](http://shendurelab.github.io/MetaPhase/) into a UNIX filesystem.  If you download the tarball (`MetaPhase.tar.gz`), unpack it using the following UNIX commands:
+Download the MetaPhase package from [https://github.com/shendurelab/MetaPhase/archive/master.zip](https://github.com/shendurelab/MetaPhase/archive/master.zip) into a UNIX filesystem.  If you download the tarball (`MetaPhase.tar.gz`), unpack it using the following UNIX commands:
 
 `tar xzvf MetaPhase.tar.gz`
 `cd MetaPhase/`
