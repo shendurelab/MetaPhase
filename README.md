@@ -3,7 +3,7 @@ MetaPhase: A software tool for metagenomic deconvolution with Hi-C.
 
 Created by Josh Burton (`jnburton at uw.edu`) in the Department of Genome Sciences at the University of Washington, Seattle, WA, USA
 
-Publication in in *G3: Genes | Genomes | Genetics* (please cite) is here: [http://dx.doi.org/10.1534/g3.114.011825](http://dx.doi.org/10.1534/g3.114.011825)
+Publication in in *G3: Genes | Genomes | Genetics* (please cite) is here: [https://doi.org/10.1534/g3.114.011825](https://doi.org/10.1534/g3.114.011825)
 
 # Table of Contents
 
@@ -275,7 +275,7 @@ After you've gotten MetaPhase to run properly, take a good look at the outputs, 
 
 #### COPYRIGHT AND DISCLAIMER
 
-The MetaPhase software package and all software and documentation contained with it are copyright © 2013-2014 by Josh Burton and the University of Washington. All rights are reserved.
+The MetaPhase software package and all software and documentation contained with it are copyright Â© 2013-2014 by Josh Burton and the University of Washington. All rights are reserved.
 
 This software is supplied 'as is' without any warranty or guarantee of support. The University of Washington is not responsible for its use, misuse, or functionality. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from, out of, or in connection with this software.
 
